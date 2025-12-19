@@ -2,13 +2,12 @@ import os
 import numpy as np
 import pandas as pd
 from datetime import datetime as dt
-import logging
 from netCDF4 import Dataset
+from typing import Tuple, Any, Optional
 
 # Do not warn about chained assignments
 pd.options.mode.chained_assignment = None  # default='warn'
 
-logger = logging.getLogger(__name__)
 
 """ extremesealevel_preprocess_pointsoverthreshold.py
 
@@ -30,7 +29,7 @@ pipeline_id = Unique identifier for this instance of the module [default="1234te
 """
 
 
-def readmeta(filename):
+def readmeta(filename: str) -> Tuple[str, float, float]:
     with open(filename, encoding="raw_unicode_escape") as myfile:
         head = [next(myfile) for x in range(6)]
     station_name = head[1][12:-1].strip()
@@ -40,7 +39,7 @@ def readmeta(filename):
     return (station_name, station_lat, station_lon)
 
 
-def extract_gesla_locations(gesladir):
+def extract_gesla_locations(gesladir: str) -> Tuple[list, list, list, list]:
     # Get a list of the gesla database files
     geslafiles = os.listdir(gesladir)
 
@@ -64,7 +63,7 @@ def extract_gesla_locations(gesladir):
     return (station_names, station_lats, station_lons, station_filenames)
 
 
-def angd(lat0, lon0, lat, lon):
+def angd(lat0: list[Any], lon0: list[Any], lat: float, lon: float) -> float:
     # Convert the input from degrees to radians
     (lat0, lon0) = np.radians((lat0, lon0))
     (lat, lon) = np.radians((lat, lon))
@@ -86,7 +85,9 @@ def angd(lat0, lon0, lat, lon):
     return np.degrees(temp)
 
 
-def mindist(qlat, qlon, lats, lons, limit=0.1):
+def mindist(
+    qlat: float, qlon: float, lats: list, lons: list, limit=0.1
+) -> Optional[list]:
     # Calculate the angular distance
     dist = angd(lats, lons, qlat, qlon)
     # Log distance calculation results
@@ -104,7 +105,13 @@ def mindist(qlat, qlon, lats, lons, limit=0.1):
 
 
 def load_tg(
-    geslafile, minDays, minYears, center_year, pctPot, gpd_pot_threshold, cluster_lim
+    geslafile: str,
+    minDays: int,
+    minYears: int,
+    center_year: int,
+    pctPot: float,
+    gpd_pot_threshold: float,
+    cluster_lim: int,
 ):
     # Initialize data constraint flags
     # include_file = False
@@ -239,18 +246,18 @@ def load_tg(
 
 
 def preprocess_gesla(
-    gesladir,
-    minDays,
-    minYears,
-    match_limit,
-    center_year,
-    pctPot,
-    gpd_pot_threshold,
-    cluster_lim,
-    site_lats,
-    site_lons,
-    site_ids,
-    pipeline_id,
+    gesladir: str,
+    minDays: int,
+    minYears: int,
+    match_limit: float,
+    center_year: int,
+    pctPot: float,
+    gpd_pot_threshold: float,
+    cluster_lim: int,
+    site_lats: list,
+    site_lons: list,
+    site_ids: list,
+    pipeline_id: str,
 ):
     # Extract the gesla station information
     (station_names, station_lats, station_lons, station_filenames) = (
@@ -384,108 +391,18 @@ def preprocess_gesla(
     return (station_data, list(station_data.keys()))
 
 
-def orig_esl_preprocess(
-    total_localsl_file,
-    min_days,
-    min_years,
-    match_lim,
-    center_year,
-    pct_pot,
-    gpd_pot_threshold,
-    cluster_lim,
-    target_years,
-    gesla_dir,
-    pipeline_id,
-):
-    # Load the sea-level projection file
-    nc = Dataset(total_localsl_file, "r")
-    # pdb.set_trace()
-    # Extract data from NetCDF file
-    site_lats = nc.variables["lat"][:].data
-    site_lons = nc.variables["lon"][:].data
-    site_ids = nc.variables["locations"][:].data
-    proj_yrs = nc.variables["years"][:].data
-    # proj_qnts = nc.variables['quantiles'][:].data
-    # proj_slc_qnts = nc.variables['localSL_quantiles'][::,::,::].data
-    proj_slc = nc.variables["sea_level_change"][::, ::, ::].data
-    nc.close()
-
-    # Make sure lats and lons are equal in length
-    if not len(site_lats) == len(site_lons):
-        raise Exception(
-            "Number of latitudes and longitudes not equal ({0} != {1})".format(
-                len(site_lats), len(site_lons)
-            )
-        )
-
-    # Test to make sure the list of site ids matches the length of the lats/lons
-    if not len(site_lats) == len(site_ids):
-        raise Exception(
-            "Number of site IDs not equal to number of locations provided in lat/lon list ({0} != {1})".format(
-                len(site_ids), len(site_lats)
-            )
-        )
-
-    # Find the target years that overlap the projection years
-    slproj_targ_year_idx = np.flatnonzero(np.isin(proj_yrs, target_years))
-    if len(slproj_targ_year_idx) == 0:
-        raise Exception("Cannot find target years in projection years")
-
-    # Define the gesla data directory
-    gesladir = gesla_dir
-
-    # Maximum distance from match allowed
-    match_limit = match_lim
-
-    # Run the GESLA preprocessing and return the matching site IDs
-    matched_ids = preprocess_gesla(
-        gesladir,
-        min_days,
-        min_years,
-        match_limit,
-        center_year,
-        pct_pot,
-        gpd_pot_threshold,
-        cluster_lim,
-        site_lats,
-        site_lons,
-        site_ids,
-        pipeline_id,
-    )
-
-    # Find the site IDs that got a match in the GESLA database
-    slproj_matched_ids_idx = np.flatnonzero(np.isin(site_ids, matched_ids))
-
-    # Build the sea-level projection output dictionary
-    slproj_output = {}
-    for this_id_idx in slproj_matched_ids_idx:
-        # Extract just the projections that match the target years and matched site ids
-        # Note: Typecast the target year "idx" variable as a list in order to avoid singleton problems later.
-        proj_slc_subset = proj_slc[::, [slproj_targ_year_idx], this_id_idx]
-
-        # Generate the sea-level projection output dictionary
-        slproj_output[site_ids[this_id_idx]] = {
-            "site_lat": site_lats[this_id_idx],
-            "site_lon": site_lons[this_id_idx],
-            "site_id": site_ids[this_id_idx],
-            "proj_years": proj_yrs[slproj_targ_year_idx],
-            "proj_slc": proj_slc_subset,
-        }
-    return slproj_output  # , config_output  # , station_data
-
-
 def esl_preprocess(
-    total_localsl_file,
-    min_days,
-    min_years,
-    match_lim,
-    center_year,
-    pct_pot,
-    gpd_pot_threshold,
-    cluster_lim,
-    target_years,
-    gesla_dir,
-    pipeline_id,
+    total_localsl_file: str,
+    min_days: int,
+    min_years: int,
+    match_lim: float,
+    center_year: int,
+    pct_pot: float,
+    gpd_pot_threshold: float,
+    cluster_lim: int,
+    target_years: list,
+    gesla_dir: str,
+    pipeline_id: str,
 ):
     # total_sl_ds = xr.open_dataset(total_localsl_file)
 

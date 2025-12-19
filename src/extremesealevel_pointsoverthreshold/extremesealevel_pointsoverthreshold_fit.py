@@ -1,12 +1,10 @@
 import numpy as np
 import pandas as pd
 from scipy.stats import genpareto
-import logging
 from extremesealevel_pointsoverthreshold.gplike import gplike
 
 # Do not warn about chained assignments
 pd.options.mode.chained_assignment = None  # default='warn'
-logger = logging.getLogger(__name__)
 """ extremesl_fit.py
 This script fits a General Pareto Distribution on preprocessed GESLA2 data. It
 also calculates the associated covariance matrix.
@@ -38,7 +36,7 @@ gregory(dot)garner@rutgers(dot)edu
 """
 
 
-def extremesl_fit(station_data, pipeline_id):
+def extremesl_fit(station_data: dict, pipeline_id: str) -> dict:
     # Keep track of station IDs that don't produce valid GPD fit
     bad_stations = []
 
@@ -149,9 +147,5 @@ def extremesl_fit(station_data, pipeline_id):
     # If there are no more stations left, raise an error
     if len(fitted_data) == 0:
         raise ValueError("No stations available with valid GPD fit")
-
-    # logger.info(f"fitted data type: {type(fitted_data)}")
-    # logger.info(f"fitted data for site id 12 keys: {list(fitted_data[(np.int64(12))].keys())}")
-    # logger.info(f"fitted data loc vals: {fitted_data[(np.int64(12))]['loc']}")
 
     return fitted_data

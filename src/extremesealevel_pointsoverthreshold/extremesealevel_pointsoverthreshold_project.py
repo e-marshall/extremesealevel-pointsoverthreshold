@@ -34,7 +34,6 @@ Created on Tue Nov	5 09:37:57 2019
 tim(dot)hermans@nioz(dot)nl
 """
 
-import argparse
 import os
 import time
 import numpy.matlib
@@ -42,12 +41,10 @@ import numpy as np
 import xarray as xr
 import fnmatch
 import tarfile
-import logging
-
+from typing import Tuple
 # from sample_from_quantiles import sample_from_quantiles
 # import pandas as pd
 # from datetime import datetime as dt
-logger = logging.getLogger(__name__)
 
 
 def getFreqFromZ_ESL(scale, shape, loc, avg_exceed, z, mhhw, mhhwFreq):
@@ -104,26 +101,26 @@ def getFreqFromZ_ESL(scale, shape, loc, avg_exceed, z, mhhw, mhhwFreq):
 
 
 def create_extreme_sealevel_dataset_xr(
-    testz,
-    proj_qnts,
-    nsamps,
-    site_lat,
-    site_lon,
-    site_id,
-    proj_years,
-    lcl_msl_samples,
-    loc,
-    mhhw,
-    mhhwFreq,
-    fut_freqs_qnts,
-    hist_freqs_qnts,
-    ampfactors_qnts,
-    allowances_qnts,
-    shape_samples,
-    scale_samples,
-    seed,
-    allowance_freq,
-):
+    testz: np.ndarray,
+    proj_qnts: np.ndarray,
+    nsamps: int,
+    site_lat: float,
+    site_lon: float,
+    site_id: int,
+    proj_years: int,
+    lcl_msl_samples: np.ndarray,
+    loc: float,
+    mhhw: float,
+    mhhwFreq: float,
+    fut_freqs_qnts: np.ndarray,
+    hist_freqs_qnts: np.ndarray,
+    ampfactors_qnts: np.ndarray,
+    allowances_qnts: np.ndarray,
+    shape_samples: np.ndarray,
+    scale_samples: np.ndarray,
+    seed: int,
+    allowance_freq: float,
+) -> Tuple[xr.Dataset, dict]:
     """
     Create an xarray Dataset equivalent to the netCDF4 Dataset creation.
 
@@ -222,19 +219,19 @@ def create_extreme_sealevel_dataset_xr(
     # Save to NetCDF file with encoding
     # ds.to_netcdf(output_filename, encoding=encoding)
 
-    return ds, encoding
+    return (ds, encoding)
 
 
 def project_station(
-    station_data,
-    slproj_data,
-    proj_qnts,
-    testz,
-    allowance_freq,
-    nsamps,
-    seed,
-    output_filename,
-):
+    station_data: dict,
+    slproj_data: dict,
+    proj_qnts: np.ndarray,
+    testz: np.ndarray,
+    allowance_freq: float,
+    nsamps: int,
+    seed: int,
+    output_filename: str,
+) -> None:
     # Seed the RNG
     rng = np.random.default_rng(seed)
 
@@ -248,7 +245,6 @@ def project_station(
     site_id = slproj_data["site_id"]
 
     # add SLC samples to location parameter
-    logger.info(f"Station data keys: {list(station_data.keys())}")
     loc = station_data["loc"]
     loc_fut_samples = lcl_msl_samples + loc
 
@@ -336,7 +332,6 @@ def project_station(
         allowance_freq=allowance_freq,
     )
     ds.to_netcdf(output_filename, encoding=encoding)
-    logger.info(f"Written extreme sea-level data to {output_filename}")
     # -------------------------------------------------------------------------------------
     # Write this station information out to a netCDF file --------------------------------
     # rootgrp = Dataset(output_filename, "w", format="NETCDF4")
@@ -407,31 +402,29 @@ def project_station(
     # Close the netcdf
     # rootgrp.close()
 
-    # Done
-    return 0
 
-
-def project_prep(quantile_min, quantile_max, quantile_step):
+def project_prep(
+    quantile_min: float, quantile_max: float, quantile_step: float
+) -> np.ndarray:
     proj_qnts = np.arange(quantile_min, quantile_max, quantile_step)
     return proj_qnts
 
 
 def extremesl_project(
-    esl_fit_file,  # esl_fit_data,
-    slproj_data,
-    min_z,
-    max_z,
-    z_step,
-    allowance_freq,
-    nsamps,
-    seed,
-    proj_qnts,
-    pipeline_id,
+    esl_fit_file: dict,  # esl_fit_data,
+    slproj_data: dict,
+    min_z: float,
+    max_z: float,
+    z_step: float,
+    allowance_freq: float,
+    nsamps: int,
+    seed: int,
+    proj_qnts: np.ndarray,
+    pipeline_id: str,
     # station_data,
-    output_dir,
-):
+    output_dir: str,
+) -> None:
     station_data = esl_fit_file
-    logging.info("esl fit file keys: %s", list(station_data.keys()))
 
     # Make the test heights
     testz = np.arange(min_z, max_z, z_step)
@@ -482,128 +475,11 @@ def extremesl_project(
             )
 
     # Collect all the extremesl.nc files into an archive that can be retrieved
-    
-    curdir_files = os.listdir(output_dir) #os.listdir(".")
-    logger.info(f"Current directory files: {curdir_files}")
+
+    curdir_files = os.listdir(output_dir)  # os.listdir(".")
     archive_files = fnmatch.filter(curdir_files, "*_extremesl.nc")
-    with tarfile.open("{}/{}_extremesl.tgz".format(output_dir, pipeline_id), "w:gz") as tar:
+    with tarfile.open(
+        "{}/{}_extremesl.tgz".format(output_dir, pipeline_id), "w:gz"
+    ) as tar:
         for name in archive_files:
             tar.add(os.path.join(output_dir, name))
-
-    # Done
-    return 0
-
-
-if __name__ == "__main__":
-    # Initialize the command-line argument parser
-    parser = argparse.ArgumentParser(
-        description="Run the projection stage for the extreme sea-level workflow",
-        epilog="Note: This is meant to be run as part of the Framework for the Assessment of Changes To Sea-level (FACTS)",
-    )
-
-    # Define the command line arguments to be expected
-    parser.add_argument(
-        "--esl_fit_file",
-        help="Fitted station data produced from fitting stage",
-        default=None,
-    )
-    parser.add_argument(
-        "--slproj_file",
-        help="Sea-level rise projections extracted from the preprocessing stage",
-        default=None,
-    )
-    parser.add_argument(
-        "--min_z",
-        help="Minimum height over which frequency is calculated (m) [default = -0.5]",
-        type=float,
-        default=-0.5,
-    )
-    parser.add_argument(
-        "--max_z",
-        help="Minimum height over which frequency is calculated (m) [default = 8.0]",
-        type=float,
-        default=8.0,
-    )
-    parser.add_argument(
-        "--quantile_min",
-        help="Minimum quantile to assess [default = 0.01]",
-        type=float,
-        default=0.01,
-    )
-    parser.add_argument(
-        "--quantile_max",
-        help="Maximum quantile to assess [default = 0.99]",
-        type=float,
-        default=0.99,
-    )
-    parser.add_argument(
-        "--quantile_step",
-        help="Quantile step [default = 0.01]",
-        type=float,
-        default=0.01,
-    )
-    parser.add_argument(
-        "--z_step",
-        help="Stepping from min_z to max_z [default = 0.01]",
-        type=float,
-        default=0.01,
-    )
-    parser.add_argument(
-        "--allowance_freq",
-        help="Frequency at which allowances are calculated [defalut = 0.01; 1/100]",
-        type=float,
-        default=0.01,
-    )
-    parser.add_argument(
-        "--nsamps",
-        help="Number of samples to draw [default = 20000]",
-        type=int,
-        default=20000,
-    )
-    parser.add_argument(
-        "--pipeline_id", help="Unique identifier for this instance of the module"
-    )
-    parser.add_argument(
-        "--seed",
-        help="Seed for the random number generator [default = 1234]",
-        default=1234,
-        type=int,
-    )
-
-    # Parse the arguments
-    args = parser.parse_args()
-
-    # Use default for station data file if necessary
-    if args.esl_fit_file is None:
-        esl_fit_file = os.path.join(
-            os.path.dirname(__file__), "{}_fit.pkl".format(args.pipeline_id)
-        )
-    else:
-        esl_fit_file = args.esl_fit_file
-
-    # Use default for slr projection data if necessary
-    if args.slproj_file is None:
-        slproj_file = os.path.join(
-            os.path.dirname(__file__), "{}_slproj_data.pkl".format(args.pipeline_id)
-        )
-    else:
-        slproj_file = args.slproj_file
-
-    proj_qnts = np.arange(args.quantile_min, args.quantile_max, args.quantile_step)
-
-    # Run the fitting process on the
-    extremesl_project(
-        esl_fit_file,
-        slproj_file,
-        args.min_z,
-        args.max_z,
-        args.z_step,
-        args.allowance_freq,
-        args.nsamps,
-        args.seed,
-        proj_qnts,
-        args.pipeline_id,
-    )
-
-    # Done
-    exit()
